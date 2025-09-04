@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>心栈 · AI陪伴</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="theme-color" content="#111827">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="心栈AI">
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(console.error));
+    }
+  </script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-b from-slate-900 to-slate-800 text-slate-100">
+  <div class="max-w-3xl mx-auto p-4 sm:p-6">
+    <header class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-3">
+        <img src="/icon-192.png" alt="logo" class="w-9 h-9 rounded-2xl"/>
+        <h1 class="text-xl font-semibold">心栈 · AI陪伴</h1>
+      </div>
+      <button id="installBtn" class="text-sm px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30">
+        安装到桌面
+      </button>
+    </header>
+
+    <main id="chat" class="h-[65vh] overflow-y-auto bg-slate-800/60 rounded-2xl p-4 space-y-4 border border-white/5"></main>
+
+    <form id="form" class="mt-4 flex gap-2">
+      <input id="input" class="flex-1 rounded-xl px-4 py-3 bg-slate-700/70 outline-none placeholder:text-slate-400" placeholder="想聊点什么？我会一直在。" />
+      <button class="px-4 py-3 rounded-xl bg-emerald-500 text-slate-900 font-semibold hover:bg-emerald-400">发送</button>
+    </form>
+
+    <div class="mt-4 text-center text-xs text-slate-400">
+      本应用基于 <a href="https://mlc.ai/web-llm/" target="_blank" class="underline">WebLLM</a> 在浏览器本地运行，不上传你的隐私内容。<br/>
+      免费版每日限额：<span id="quotaLeft">计算中...</span> 条消息。
+    </div>
+  </div>
+
+  <script type="module">
+    import { CreateWebWorkerMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
+    const MODEL_ID = "Qwen2.5-1.5B-Instruct-q4f32_1-MLC";
+
+    let engine, ready = false;
+    const chatEl = document.getElementById('chat');
+    const form = document.getElementById('form');
+    const input = document.getElementById('input');
+    const messages = [
+      { role: "system", content: "你是一个温柔的AI陪伴者，耐心、接纳、不评判。" }
+    ];
+
+    const DAILY_LIMIT = 30;
+    function todayKey(){ const d=new Date(); return `quota-${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
+    function getQuota(){ const used=+localStorage.getItem(todayKey())||0; return { used, left: Math.max(0,DAILY_LIMIT-used)}; }
+    function incQuota(){ localStorage.setItem(todayKey(), (getQuota().used+1).toString()); updateQuota(); }
+    function updateQuota(){ document.getElementById('quotaLeft').textContent = getQuota().left; }
+    updateQuota();
+
+    function appendBubble(text, who="ai") {
+      const wrap=document.createElement('div'); wrap.className=`flex ${who==="me"?"justify-end":""}`;
+      const bubble=document.createElement('div');
+      bubble.className=`max-w-[85%] px-4 py-3 rounded-2xl ${who==="me"?"bg-emerald-500 text-slate-900":"bg-slate-700/70"}`;
+      bubble.innerText=text; wrap.appendChild(bubble); chatEl.appendChild(wrap); chatEl.scrollTop=chatEl.scrollHeight;
+    }
+
+    async function askLLM(userText){
+      if(getQuota().left<=0){ appendBubble("今日免费额度已用完，明天再聊吧~"); return; }
+      messages.push({role:"user", content:userText});
+      try {
+        const res=await engine.chat.completions.create({messages, temperature:0.7, max_tokens:256});
+        const reply=res.choices[0].message.content; appendBubble(reply); messages.push({role:"assistant", content:reply}); incQuota();
+      }catch(e){ appendBubble("模型还没加载好，请稍等或刷新。"); }
+    }
+
+    form.addEventListener('submit',e=>{
+      e.preventDefault(); const t=input.value.trim(); if(!t||!ready)return;
+      appendBubble(t,"me"); input.value=""; askLLM(t);
+    });
+
+    async function boot(){
+      appendBubble("正在加载模型，请稍等…");
+      engine = await CreateWebWorkerMLCEngine(
+        new Worker("https://esm.run/@mlc-ai/web-llm/dist/worker.js",{type:"module"}),
+        {model_id:MODEL_ID, log_level:"INFO"}
+      );
+      ready=true; appendBubble("我在这儿，今天过得怎么样？");
+    }
+    boot();
+
+    // 安装按钮
+    let deferredPrompt=null;
+    window.addEventListener('beforeinstallprompt', e=>{e.preventDefault(); deferredPrompt=e;});
+    document.getElementById('installBtn').addEventListener('click', ()=>{ if(deferredPrompt){deferredPrompt.prompt(); deferredPrompt=null;} });
+  </script>
+</body>
+</html>
