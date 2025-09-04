@@ -44,59 +44,49 @@
   </div>
 
   <script type="module">
-    import { CreateWebWorkerMLCEngine } from "https://esm.run/@mlc-ai/web-llm";
-    const MODEL_ID = "Qwen2.5-1.5B-Instruct-q4f32_1-MLC";
+  import * as webllm from "https://esm.run/@mlc-ai/web-llm";
 
-    let engine, ready = false;
-    const chatEl = document.getElementById('chat');
-    const form = document.getElementById('form');
-    const input = document.getElementById('input');
-    const messages = [
-      { role: "system", content: "你是一个温柔的AI陪伴者，耐心、接纳、不评判。" }
-    ];
+  // 先用更小的模型打通流程；跑通后再换回 1.5B
+  const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
 
-    const DAILY_LIMIT = 30;
-    function todayKey(){ const d=new Date(); return `quota-${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`; }
-    function getQuota(){ const used=+localStorage.getItem(todayKey())||0; return { used, left: Math.max(0,DAILY_LIMIT-used)}; }
-    function incQuota(){ localStorage.setItem(todayKey(), (getQuota().used+1).toString()); updateQuota(); }
-    function updateQuota(){ document.getElementById('quotaLeft').textContent = getQuota().left; }
-    updateQuota();
+  let engine, ready = false;
 
-    function appendBubble(text, who="ai") {
-      const wrap=document.createElement('div'); wrap.className=`flex ${who==="me"?"justify-end":""}`;
-      const bubble=document.createElement('div');
-      bubble.className=`max-w-[85%] px-4 py-3 rounded-2xl ${who==="me"?"bg-emerald-500 text-slate-900":"bg-slate-700/70"}`;
-      bubble.innerText=text; wrap.appendChild(bubble); chatEl.appendChild(wrap); chatEl.scrollTop=chatEl.scrollHeight;
+  const chatEl = document.getElementById('chat');
+  const form = document.getElementById('form');
+  const input = document.getElementById('input');
+
+  function append(text){ const d=document.createElement('div'); d.className="mb-2 text-sm opacity-90"; d.textContent=text; chatEl.appendChild(d); chatEl.scrollTop=chatEl.scrollHeight; }
+
+  async function boot(){
+    append("正在加载模型（首次会下载小量文件），请稍等…");
+    try {
+      // 非 Worker：更稳，不依赖跨域隔离
+      engine = await webllm.CreateMLCEngine({ model_id: MODEL_ID, log_level: "INFO" });
+      ready = true;
+      append("模型就绪 ✅ 现在可以聊天了。");
+    } catch (e) {
+      console.error(e);
+      append("模型加载失败：" + (e?.message || e));
     }
+  }
+  boot();
 
-    async function askLLM(userText){
-      if(getQuota().left<=0){ appendBubble("今日免费额度已用完，明天再聊吧~"); return; }
-      messages.push({role:"user", content:userText});
-      try {
-        const res=await engine.chat.completions.create({messages, temperature:0.7, max_tokens:256});
-        const reply=res.choices[0].message.content; appendBubble(reply); messages.push({role:"assistant", content:reply}); incQuota();
-      }catch(e){ appendBubble("模型还没加载好，请稍等或刷新。"); }
-    }
+  const messages = [{ role: "system", content: "你是一个温柔的AI陪伴者，耐心、接纳、不评判。" }];
 
-    form.addEventListener('submit',e=>{
-      e.preventDefault(); const t=input.value.trim(); if(!t||!ready)return;
-      appendBubble(t,"me"); input.value=""; askLLM(t);
-    });
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    if(!ready) return append("模型还在加载，请再等几秒…");
+    const t = input.value.trim(); if(!t) return;
+    append("我："+t); input.value="";
+    messages.push({ role:"user", content:t });
+    try{
+      const out = await engine.chat.completions.create({ messages, temperature:0.7, max_tokens:256 });
+      const reply = out?.choices?.[0]?.message?.content || "(空回复)";
+      messages.push({ role:"assistant", content: reply });
+      append("AI："+reply);
+    }catch(err){ console.error(err); append("回复失败："+(err?.message||err)); }
+  });
+</script>
 
-    async function boot(){
-      appendBubble("正在加载模型，请稍等…");
-      engine = await CreateWebWorkerMLCEngine(
-        new Worker("https://esm.run/@mlc-ai/web-llm/dist/worker.js",{type:"module"}),
-        {model_id:MODEL_ID, log_level:"INFO"}
-      );
-      ready=true; appendBubble("我在这儿，今天过得怎么样？");
-    }
-    boot();
-
-    // 安装按钮
-    let deferredPrompt=null;
-    window.addEventListener('beforeinstallprompt', e=>{e.preventDefault(); deferredPrompt=e;});
-    document.getElementById('installBtn').addEventListener('click', ()=>{ if(deferredPrompt){deferredPrompt.prompt(); deferredPrompt=null;} });
-  </script>
 </body>
 </html>
