@@ -44,7 +44,7 @@
   </div>
 
   <script type="module">
-  import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+import * as webllm from "https://esm.run/@mlc-ai/web-llm@0.2.64";
 
   // 先用更小的模型打通流程；跑通后再换回 1.5B
 const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
@@ -61,7 +61,7 @@ const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
     append("正在加载模型（首次会下载小量文件），请稍等…");
     try {
       // 非 Worker：更稳，不依赖跨域隔离
-      engine = await webllm.CreateMLCEngine({ model_id: MODEL_ID, log_level: "INFO" });
+     engine = await webllm.CreateMLCEngine(MODEL_ID, { logLevel: "info" });
       ready = true;
       append("模型就绪 ✅ 现在可以聊天了。");
     } catch (e) {
@@ -90,4 +90,5 @@ const MODEL_ID = "Qwen2.5-0.5B-Instruct-q4f16_1-MLC";
 
 </body>
 </html>
+
 
